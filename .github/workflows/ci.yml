@@ -1,0 +1,113 @@
+name: OpenOrienteering Mapper Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ ui_scale_desktop, main, master, workflow ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------
+      # MSYS2 + full Qt/GDAL stack
+      # -----------------------------
+      - name: Setup MSYS2 (Qt + GIS deps)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >
+            base-devel
+            git
+            cmake
+            ninja
+            mingw-w64-x86_64-toolchain
+
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-qt5-tools
+            mingw-w64-x86_64-qt5-location
+            mingw-w64-x86_64-qt5-svg
+            mingw-w64-x86_64-qt5-imageformats
+            mingw-w64-x86_64-qt5-translations
+            mingw-w64-x86_64-qt5-sensors
+            mingw-w64-x86_64-qt5-serialport
+            mingw-w64-x86_64-qt5-base
+
+            mingw-w64-x86_64-gdal
+            mingw-w64-x86_64-proj
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-libpolyclipping
+
+      # -----------------------------
+      # Env setup (matches Azure logic)
+      # -----------------------------
+      - name: Configure environment
+        shell: bash
+        run: |
+          set -e
+
+          echo "SOURCE_DIR=$PWD" >> $GITHUB_ENV
+          echo "SUPERBUILD_INSTALL_DIR=$PWD/install" >> $GITHUB_ENV
+
+          VERSION_DISPLAY="${{ github.ref_name }} v${{ github.run_number }}"
+          echo "VERSION_DISPLAY=$VERSION_DISPLAY" >> $GITHUB_ENV
+
+      # -----------------------------
+      # Superbuild
+      # -----------------------------
+      - name: Clone superbuild
+        run: |
+          git clone --depth 1 https://github.com/openorienteering/superbuild.git
+
+      # -----------------------------
+      # Configure
+      # -----------------------------
+      - name: Configure superbuild
+        run: |
+          mkdir -p build
+
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSUPERBUILD_DISABLE_DEPENDENCIES=TRUE \
+            -DMapper_CI_SOURCE_DIR=$SOURCE_DIR \
+            -DMapper_CI_VERSION_DISPLAY="$VERSION_DISPLAY" \
+            -DMapper_CI_QT_VERSION=5.12 \
+            -DMapper_CI_ENABLE_GDAL=1 \
+            -DMapper_CI_ENABLE_POSITIONING=1 \
+            -Ddefault_INSTALL_PREFIX=$SUPERBUILD_INSTALL_DIR \
+            superbuild
+
+      # -----------------------------
+      # Build
+      # -----------------------------
+      - name: Build toolchain
+        run: |
+          cmake --build build --target toolchain-info -j$(nproc)
+
+      - name: Build Mapper
+        run: |
+          cmake --build build --target openorienteering-mapper-ci -j$(nproc)
+
+      # -----------------------------
+      # Package output
+      # -----------------------------
+      - name: Collect executable
+        run: |
+          mkdir -p output
+          find build -type f -iname "*.exe" -exec cp {} output/ \;
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapper-windows
+          path: output/
