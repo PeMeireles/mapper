@@ -3,7 +3,7 @@ name: OpenOrienteering Mapper (Windows MSYS2)
 on:
   workflow_dispatch:
   push:
-    branches: [ ui_scale_desktop, main, master ]
+    branches: [ ui_scale_desktop, main, master, workflow ]
   pull_request:
 
 jobs:
