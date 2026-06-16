@@ -154,6 +154,7 @@ Settings::Settings()
 	registerSetting(General_SaveUndoRedo, "saveUndoRedo", true);
 	registerSetting(General_AutosaveInterval, "autosave", 15); // unit: minutes
 	registerSetting(General_Language, "language", QLocale::system().name().left(2));
+	registerSetting(General_DesktopUiScale, "desktopUiScale", 1.0);
 	registerSetting(General_PixelsPerInch, "pixelsPerInch", ppi);
 	registerSetting(General_TranslationFile, "translationFile", QVariant(QString{}));
 	registerSetting(General_RecentFilesList, "recentFileList", QVariant(QStringList()));

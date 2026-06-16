@@ -68,6 +68,7 @@ public:
 		General_SaveUndoRedo,
 		General_AutosaveInterval,
 		General_Language,
+		General_DesktopUiScale,
 		General_PixelsPerInch,
 		General_RecentFilesList,
 		General_TranslationFile,

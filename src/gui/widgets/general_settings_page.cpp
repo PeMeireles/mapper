@@ -109,6 +109,13 @@ GeneralSettingsPage::GeneralSettingsPage(QWidget* parent)
 	auto ppi_calculate_button = new QToolButton();
 	ppi_calculate_button->setIcon(QIcon(QLatin1String(":/images/settings.png")));
 	ppi_layout->addWidget(ppi_calculate_button);
+
+#ifndef Q_OS_ANDROID
+	auto ui_scale_edit = Util::SpinBox::create(2, 0.50, 4.00);
+	ui_scale_edit->setSingleStep(0.05);
+	ui_scale_edit->setObjectName(QStringLiteral("desktop_ui_scale"));
+	layout->addRow(tr("UI scale:"), ui_scale_edit);
+#endif
 	
 	layout->addItem(Util::SpacerItem::create(this));
 	layout->addRow(Util::Headline::create(tr("Program start")));
@@ -227,6 +234,8 @@ void GeneralSettingsPage::apply()
 	setSetting(Settings::HomeScreen_TipsVisible, tips_visible_check->isChecked());
 	setSetting(Settings::General_RetainCompatiblity, compatibility_check->isChecked());
 	setSetting(Settings::General_SaveUndoRedo, undo_check->isChecked());
+	if (auto* ui_scale_edit = findChild<QDoubleSpinBox*>(QStringLiteral("desktop_ui_scale")))
+		setSetting(Settings::General_DesktopUiScale, ui_scale_edit->value());
 	setSetting(Settings::General_PixelsPerInch, ppi_edit->value());
 	
 	auto encoding = encoding_box->currentText().toLatin1();
@@ -282,6 +291,8 @@ void GeneralSettingsPage::updateWidgets()
 {
 	updateLanguageBox(getSetting(Settings::General_Language));
 	
+	if (auto* ui_scale_edit = findChild<QDoubleSpinBox*>(QStringLiteral("desktop_ui_scale")))
+		ui_scale_edit->setValue(getSetting(Settings::General_DesktopUiScale).toDouble());
 	ppi_edit->setValue(getSetting(Settings::General_PixelsPerInch).toDouble());
 	open_mru_check->setChecked(getSetting(Settings::General_OpenMRUFile).toBool());
 	tips_visible_check->setChecked(getSetting(Settings::HomeScreen_TipsVisible).toBool());

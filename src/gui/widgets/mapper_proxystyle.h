@@ -203,6 +203,7 @@ private:
 	QFont menu_font        = {};
 	int button_size        = 0;
 	int small_icon_size    = 0;
+	qreal desktop_ui_scale = 1.0;
 	bool touch_mode        = false;
 	
 	Q_DISABLE_COPY(MapperProxyStyle)

@@ -102,6 +102,37 @@ qreal dpiScaled(qreal value)
 #endif
 }
 
+int scaledMetric(int metric, qreal scale)
+{
+	if (metric <= 0)
+		return metric;
+	return qMax(1, qRound(metric * scale));
+}
+
+QSize scaledSize(const QSize& size, qreal scale)
+{
+	return QSize{ scaledMetric(size.width(), scale), scaledMetric(size.height(), scale) };
+}
+
+QFont scaledFont(QFont font, qreal scale)
+{
+	auto const pixel_size = font.pixelSize();
+	if (pixel_size > 0)
+		font.setPixelSize(scaledMetric(pixel_size, scale));
+	else
+	{
+		auto const point_size = font.pointSizeF();
+		if (point_size > 0)
+			font.setPointSizeF(point_size * scale);
+	}
+	return font;
+}
+
+bool usesDesktopUiScale(qreal scale)
+{
+	return scale > 0.0 && !qFuzzyCompare(scale, 1.0);
+}
+
 }  // namespace
 
 
@@ -124,7 +155,8 @@ void MapperProxyStyle::onSettingsChanged()
 {
 	auto& settings = Settings::getInstance();
 	if (touch_mode != settings.touchModeEnabled()
-	    || (touch_mode && button_size != buttonSizePixel(settings)))
+	    || (touch_mode && button_size != buttonSizePixel(settings))
+	    || (!touch_mode && !qFuzzyCompare(desktop_ui_scale, settings.getSettingCached(Settings::General_DesktopUiScale).toReal())))
 	{
 #ifndef __clang_analyzer__
 		// No leak: QApplication takes ownership.
@@ -151,12 +183,14 @@ void MapperProxyStyle::fixupProxyChain(QStyle* base_style)
 void MapperProxyStyle::polish(QApplication* application)
 {
 	common_style = qobject_cast<QCommonStyle*>(baseStyle());
+	original_font = application->font();
 	
 	fixupProxyChain(baseStyle());
 	QProxyStyle::polish(application);
 	QApplication::setPalette(default_palette);
 	
 	auto& settings = Settings::getInstance();
+	desktop_ui_scale = settings.getSetting(Settings::General_DesktopUiScale).toReal();
 	connect(&settings, &Settings::settingsChanged, this, &MapperProxyStyle::onSettingsChanged);
 	if (settings.touchModeEnabled())
 	{
@@ -205,13 +239,17 @@ void MapperProxyStyle::polish(QApplication* application)
 			QApplication::setFont(menu_font, "QComboMenuItem");
 		}
 	}
+	else if (usesDesktopUiScale(desktop_ui_scale))
+	{
+		QApplication::setFont(scaledFont(original_font, desktop_ui_scale));
+	}
 }
 
 void MapperProxyStyle::unpolish(QApplication* application)
 {
-	if (touch_mode)
+	if (touch_mode || usesDesktopUiScale(desktop_ui_scale))
 	{
-		QApplication::setFont(QApplication::font());
+		QApplication::setFont(original_font);
 	}
 	
 	QApplication::setPalette(default_palette);
@@ -412,12 +450,60 @@ int MapperProxyStyle::pixelMetric(PixelMetric metric, const QStyleOption* option
 		switch (metric)
 		{
 		case QStyle::PM_ToolBarIconSize:
-			return (QProxyStyle::pixelMetric(metric) + QProxyStyle::pixelMetric(QStyle::PM_SmallIconSize)) / 2;
+			return scaledMetric((QProxyStyle::pixelMetric(metric) + QProxyStyle::pixelMetric(QStyle::PM_SmallIconSize)) / 2, desktop_ui_scale);
+		case QStyle::PM_ButtonIconSize:
+		case QStyle::PM_SmallIconSize:
+		case QStyle::PM_ToolBarSeparatorExtent:
+		case QStyle::PM_ToolBarExtensionExtent:
+		case QStyle::PM_DockWidgetSeparatorExtent:
+		case QStyle::PM_SplitterWidth:
+			return scaledMetric(QProxyStyle::pixelMetric(metric), desktop_ui_scale);
 		default:
 			break;
 		}
 	}
 #endif
+	else if (usesDesktopUiScale(desktop_ui_scale))
+	{
+		switch (metric)
+		{
+		case QStyle::PM_ToolBarIconSize:
+		case QStyle::PM_ButtonIconSize:
+		case QStyle::PM_SmallIconSize:
+		case QStyle::PM_ToolBarSeparatorExtent:
+		case QStyle::PM_ToolBarExtensionExtent:
+		case QStyle::PM_DockWidgetSeparatorExtent:
+		case QStyle::PM_SplitterWidth:
+		case QStyle::PM_ToolBarItemSpacing:
+		case QStyle::PM_MenuButtonIndicator:
+		case QStyle::PM_MenuHMargin:
+		case QStyle::PM_MenuVMargin:
+		case QStyle::PM_MenuPanelWidth:
+		case QStyle::PM_MenuScrollerHeight:
+		case QStyle::PM_IndicatorWidth:
+		case QStyle::PM_IndicatorHeight:
+		case QStyle::PM_ExclusiveIndicatorWidth:
+		case QStyle::PM_ExclusiveIndicatorHeight:
+		case QStyle::PM_CheckBoxLabelSpacing:
+		case QStyle::PM_RadioButtonLabelSpacing:
+		case QStyle::PM_TabBarTabHSpace:
+		case QStyle::PM_TabBarTabVSpace:
+		case QStyle::PM_TabBarIconSize:
+		case QStyle::PM_ScrollBarExtent:
+		case QStyle::PM_SliderThickness:
+		case QStyle::PM_SliderLength:
+		case QStyle::PM_DefaultFrameWidth:
+		case QStyle::PM_LayoutHorizontalSpacing:
+		case QStyle::PM_LayoutVerticalSpacing:
+		case QStyle::PM_LayoutLeftMargin:
+		case QStyle::PM_LayoutTopMargin:
+		case QStyle::PM_LayoutRightMargin:
+		case QStyle::PM_LayoutBottomMargin:
+			return scaledMetric(QProxyStyle::pixelMetric(metric), desktop_ui_scale);
+		default:
+			break;
+		}
+	}
 	
 	return QProxyStyle::pixelMetric(metric, option, widget);
 }
@@ -445,6 +531,40 @@ QSize MapperProxyStyle::sizeFromContents(QStyle::ContentsType ct, const QStyleOp
 			return [](int value) {
 				return QSize{ value, value };
 			} (qMax(QProxyStyle::pixelMetric(QStyle::PM_ButtonIconSize), small_icon_size));
+		default:
+			break;
+		}
+	}
+	else if (usesDesktopUiScale(desktop_ui_scale))
+	{
+		switch (ct)
+		{
+		case QStyle::CT_MenuItem:
+			if (auto const* menu_item = qstyleoption_cast<const QStyleOptionMenuItem *>(opt))
+			{
+				auto size = QProxyStyle::sizeFromContents(ct, opt, contents_size, w);
+				if (menu_item->icon.isNull() && (!w || !w->inherits("QComboBox")))
+					size.rwidth() += scaledMetric(QProxyStyle::pixelMetric(QStyle::PM_SmallIconSize), desktop_ui_scale)
+					                 - QProxyStyle::pixelMetric(QStyle::PM_SmallIconSize);
+				if (menu_item->menuItemType == QStyleOptionMenuItem::Separator && menu_item->text.isEmpty())
+					size.rheight() += scaledMetric(QProxyStyle::pixelMetric(QStyle::PM_MenuVMargin), desktop_ui_scale)
+					                  - QProxyStyle::pixelMetric(QStyle::PM_MenuVMargin);
+				else
+					size.setHeight(qMax(size.height(), scaledMetric(size.height(), desktop_ui_scale)));
+				return size;
+			}
+			break;
+		case QStyle::CT_PushButton:
+		case QStyle::CT_ToolButton:
+		case QStyle::CT_ComboBox:
+		case QStyle::CT_SpinBox:
+		case QStyle::CT_CheckBox:
+		case QStyle::CT_RadioButton:
+		case QStyle::CT_TabBarTab:
+		case QStyle::CT_HeaderSection:
+		{
+			return scaledSize(QProxyStyle::sizeFromContents(ct, opt, contents_size, w), desktop_ui_scale);
+		}
 		default:
 			break;
 		}
