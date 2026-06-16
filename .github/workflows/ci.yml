@@ -1,9 +1,9 @@
-name: OpenOrienteering Mapper Windows Build
+name: OpenOrienteering Mapper (Windows MSYS2)
 
 on:
   workflow_dispatch:
   push:
-    branches: [ ui_scale_desktop, main, master, workflow ]
+    branches: [ ui_scale_desktop, main, master ]
   pull_request:
 
 jobs:
@@ -15,13 +15,16 @@ jobs:
         shell: msys2 {0}
 
     steps:
-      - name: Checkout
+      # -------------------------
+      # Checkout
+      # -------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # -----------------------------
-      # MSYS2 + full Qt/GDAL stack
-      # -----------------------------
-      - name: Setup MSYS2 (Qt + GIS deps)
+      # -------------------------
+      # MSYS2 setup
+      # -------------------------
+      - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -33,25 +36,34 @@ jobs:
             ninja
             mingw-w64-x86_64-toolchain
 
-            mingw-w64-x86_64-qt5
-            mingw-w64-x86_64-qt5-tools
-            mingw-w64-x86_64-qt5-location
-            mingw-w64-x86_64-qt5-svg
-            mingw-w64-x86_64-qt5-imageformats
-            mingw-w64-x86_64-qt5-translations
-            mingw-w64-x86_64-qt5-sensors
-            mingw-w64-x86_64-qt5-serialport
-            mingw-w64-x86_64-qt5-base
+      # -------------------------
+      # Install dependencies (IMPORTANT FIX)
+      # -------------------------
+      - name: Install Qt + GIS dependencies
+        shell: msys2 {0}
+        run: |
+          set -e
 
-            mingw-w64-x86_64-gdal
-            mingw-w64-x86_64-proj
-            mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-libpolyclipping
+          pacman --noconfirm -Syu
 
-      # -----------------------------
-      # Env setup (matches Azure logic)
-      # -----------------------------
-      - name: Configure environment
+          pacman --noconfirm --needed -S \
+            mingw-w64-x86_64-qt5-base \
+            mingw-w64-x86_64-qt5-tools \
+            mingw-w64-x86_64-qt5-location \
+            mingw-w64-x86_64-qt5-svg \
+            mingw-w64-x86_64-qt5-imageformats \
+            mingw-w64-x86_64-qt5-translations \
+            mingw-w64-x86_64-qt5-sensors \
+            mingw-w64-x86_64-qt5-serialport \
+            mingw-w64-x86_64-gdal \
+            mingw-w64-x86_64-proj \
+            mingw-w64-x86_64-zlib \
+            mingw-w64-x86_64-clipper
+
+      # -------------------------
+      # Environment setup (Azure-style)
+      # -------------------------
+      - name: Setup build environment
         shell: bash
         run: |
           set -e
@@ -62,18 +74,22 @@ jobs:
           VERSION_DISPLAY="${{ github.ref_name }} v${{ github.run_number }}"
           echo "VERSION_DISPLAY=$VERSION_DISPLAY" >> $GITHUB_ENV
 
-      # -----------------------------
-      # Superbuild
-      # -----------------------------
+      # -------------------------
+      # Clone superbuild
+      # -------------------------
       - name: Clone superbuild
+        shell: bash
         run: |
           git clone --depth 1 https://github.com/openorienteering/superbuild.git
 
-      # -----------------------------
-      # Configure
-      # -----------------------------
-      - name: Configure superbuild
+      # -------------------------
+      # Configure superbuild
+      # -------------------------
+      - name: Configure
+        shell: msys2 {0}
         run: |
+          set -e
+
           mkdir -p build
 
           cmake -B build -G Ninja \
@@ -87,27 +103,36 @@ jobs:
             -Ddefault_INSTALL_PREFIX=$SUPERBUILD_INSTALL_DIR \
             superbuild
 
-      # -----------------------------
-      # Build
-      # -----------------------------
-      - name: Build toolchain
+      # -------------------------
+      # Build toolchain-info
+      # -------------------------
+      - name: Build toolchain-info
+        shell: msys2 {0}
         run: |
           cmake --build build --target toolchain-info -j$(nproc)
 
+      # -------------------------
+      # Build main application
+      # -------------------------
       - name: Build Mapper
+        shell: msys2 {0}
         run: |
           cmake --build build --target openorienteering-mapper-ci -j$(nproc)
 
-      # -----------------------------
-      # Package output
-      # -----------------------------
-      - name: Collect executable
+      # -------------------------
+      # Collect output
+      # -------------------------
+      - name: Collect binaries
+        shell: bash
         run: |
           mkdir -p output
-          find build -type f -iname "*.exe" -exec cp {} output/ \;
+          find build -type f -iname "*.exe" -exec cp {} output/ \; || true
 
-      - name: Upload artifact
+      # -------------------------
+      # Upload artifact
+      # -------------------------
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mapper-windows
+          name: openorienteering-mapper-windows
           path: output/
